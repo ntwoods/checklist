@@ -24,6 +24,14 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
   const [selectedUser, setSelectedUser] = useState("all");
 
   const isAdmin = normalizeEmail(auth?.email) === adminEmail;
+  const handleAuthError = (payload) => {
+    if (payload?.code === "TOKEN_EXPIRED" || payload?.code === "TOKEN_INVALID") {
+      onToast(payload.message || "Session expired. Please sign in again.");
+      onLogout();
+      return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -41,6 +49,9 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
           `${webAppUrl}?action=getTasks&idToken=${encodeURIComponent(auth.idToken)}`
         );
         const data = await response.json();
+        if (handleAuthError(data)) {
+          return;
+        }
         if (!response.ok || !data.ok) {
           throw new Error(data?.message || "Failed to fetch tasks");
         }
@@ -215,6 +226,9 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
       });
 
       const data = await response.json();
+      if (handleAuthError(data)) {
+        return;
+      }
       if (!response.ok || !data.ok) {
         throw new Error(data?.message || "Failed to mark task done");
       }
