@@ -152,6 +152,32 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
     );
   }, [isAdmin, selectedUser, tasks]);
 
+  const pendingSummary = useMemo(() => {
+    if (!isAdmin) {
+      return [];
+    }
+
+    const map = new Map();
+    tasks.forEach((task) => {
+      if (task.isCompleted) {
+        return;
+      }
+      const email = normalizeEmail(task.email);
+      if (!email) {
+        return;
+      }
+      const label = (task.name || "").trim() || task.email || email;
+      const current = map.get(email) || { label, count: 0 };
+      current.count += 1;
+      if (!current.label && label) {
+        current.label = label;
+      }
+      map.set(email, current);
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [isAdmin, tasks]);
+
   const sortedTasks = useMemo(() => {
     const pending = filteredTasks
       .filter((task) => !task.isCompleted)
@@ -248,6 +274,22 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
             ))}
           </select>
         </div>
+      ) : null}
+
+      {isAdmin && pendingSummary.length > 0 ? (
+        <section className="summary-panel">
+          <h2>Pending Summary (Today and Earlier)</h2>
+          <div className="summary-grid">
+            {pendingSummary.map((item) => (
+              <div key={item.label} className="summary-item">
+                <span>{item.label}</span>
+                <span className="summary-count">
+                  {String(item.count).padStart(2, "0")}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
       ) : null}
 
       {loading ? (
