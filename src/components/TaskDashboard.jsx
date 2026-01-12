@@ -8,12 +8,22 @@ import {
 } from "../utils/date.js";
 
 const webAppUrl = import.meta.env.VITE_GAS_WEBAPP_URL;
+const adminEmail = "pc01@ntwoods.com";
+
+const normalizeEmail = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
 
 export default function TaskDashboard({ auth, onLogout, onToast }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(() => new Set());
   const [now, setNow] = useState(Date.now());
+  const [selectedUser, setSelectedUser] = useState("all");
+
+  const isAdmin = normalizeEmail(auth?.email) === adminEmail;
 
   useEffect(() => {
     let isMounted = true;
@@ -79,9 +89,11 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
       return auth.name;
     }
 
-    const fromTasks = tasks.find((task) => task.name)?.name;
-    if (fromTasks) {
-      return fromTasks;
+    if (!isAdmin) {
+      const fromTasks = tasks.find((task) => task.name)?.name;
+      if (fromTasks) {
+        return fromTasks;
+      }
     }
 
     if (auth?.email) {
@@ -91,22 +103,71 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
     return "there";
   }, [auth, tasks]);
 
+  const userOptions = useMemo(() => {
+    if (!isAdmin) {
+      return [];
+    }
+
+    const map = new Map();
+    tasks.forEach((task) => {
+      const email = normalizeEmail(task.email);
+      if (!email) {
+        return;
+      }
+      const label = (task.name || "").trim() || task.email || email;
+      if (!map.has(email)) {
+        map.set(email, label);
+      }
+    });
+
+    return Array.from(map, ([value, label]) => ({ value, label })).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+  }, [isAdmin, tasks]);
+
+  useEffect(() => {
+    if (!isAdmin) {
+      if (selectedUser !== "all") {
+        setSelectedUser("all");
+      }
+      return;
+    }
+
+    if (selectedUser === "all") {
+      return;
+    }
+
+    const exists = userOptions.some((option) => option.value === selectedUser);
+    if (!exists) {
+      setSelectedUser("all");
+    }
+  }, [isAdmin, selectedUser, userOptions]);
+
+  const filteredTasks = useMemo(() => {
+    if (!isAdmin || selectedUser === "all") {
+      return tasks;
+    }
+    return tasks.filter(
+      (task) => normalizeEmail(task.email) === selectedUser
+    );
+  }, [isAdmin, selectedUser, tasks]);
+
   const sortedTasks = useMemo(() => {
-    const pending = tasks
+    const pending = filteredTasks
       .filter((task) => !task.isCompleted)
       .sort((a, b) => a.plannedDate - b.plannedDate);
-    const completed = tasks
+    const completed = filteredTasks
       .filter((task) => task.isCompleted)
       .sort((a, b) => a.actualDate - b.actualDate);
     return [...pending, ...completed];
-  }, [tasks]);
+  }, [filteredTasks]);
 
   const taskCountLabel = useMemo(() => {
     if (loading) {
       return "Loading";
     }
-    return `${tasks.length} Tasks`;
-  }, [loading, tasks.length]);
+    return `${sortedTasks.length} Tasks`;
+  }, [loading, sortedTasks.length]);
 
   async function handleMarkDone(taskId) {
     if (!webAppUrl || processing.has(taskId)) {
@@ -171,13 +232,31 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
         </div>
       </header>
 
+      {isAdmin ? (
+        <div className="filter-bar">
+          <label htmlFor="userFilter">Filter by user</label>
+          <select
+            id="userFilter"
+            value={selectedUser}
+            onChange={(event) => setSelectedUser(event.target.value)}
+          >
+            <option value="all">All Users</option>
+            {userOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
       {loading ? (
         <div className="loading-wrap">
           <span className="spinner"></span>
           <span>{taskCountLabel}</span>
         </div>
-      ) : tasks.length === 0 ? (
-        <div className="empty-state">No Pending Tasks</div>
+      ) : sortedTasks.length === 0 ? (
+        <div className="empty-state">No Tasks Found</div>
       ) : (
         <div className="table-wrap">
           <table className="task-table">
@@ -199,6 +278,8 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
                 const countdown = deadlineDate
                   ? formatCountdown(deadlineDate.getTime() - now)
                   : { text: "", isOverdue: false };
+                const isOwnTask =
+                  normalizeEmail(task.email) === normalizeEmail(auth.email);
 
                 return (
                   <tr
@@ -206,7 +287,14 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
                     className={`task-row ${task.isCompleted ? "completed" : ""}`}
                   >
                     <td>{task.taskId}</td>
-                    <td className="task-name">{task.task}</td>
+                    <td className="task-name">
+                      <div>{task.task}</div>
+                      {isAdmin ? (
+                        <div className="task-owner">
+                          {task.name || task.email || "-"}
+                        </div>
+                      ) : null}
+                    </td>
                     <td>{formatDisplayDate(task.plannedDate)}</td>
                     <td>
                       <div>{deadlineText || "-"}</div>
@@ -221,6 +309,8 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
                     <td>
                       {task.isCompleted ? (
                         <span className="status-completed">Completed</span>
+                      ) : !isOwnTask ? (
+                        <span className="status-view">View Only</span>
                       ) : (
                         <button
                           className="button button-primary button-done"
