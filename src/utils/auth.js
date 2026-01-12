@@ -20,14 +20,14 @@ export function decodeJwt(token) {
   }
 }
 
-export function storeAuth({ idToken, email }) {
+export function storeAuth({ idToken, email, name }) {
   if (!idToken || !email) {
     return;
   }
 
   localStorage.setItem(
     STORAGE_KEY,
-    JSON.stringify({ idToken, email })
+    JSON.stringify({ idToken, email, name })
   );
 }
 

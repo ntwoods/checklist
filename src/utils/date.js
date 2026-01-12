@@ -39,6 +39,18 @@ export function formatDisplayDate(date) {
   return `${base} ${time}`;
 }
 
+export function formatDisplayDateTime(date) {
+  if (!(date instanceof Date)) {
+    return "";
+  }
+
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = MONTHS[date.getMonth()] || "";
+  const year = String(date.getFullYear()).slice(-2);
+  const time = formatTime(date);
+  return `${day}-${month}-${year} ${time}`;
+}
+
 export function formatTime(date) {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");

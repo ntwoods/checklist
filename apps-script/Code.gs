@@ -39,6 +39,13 @@ function verifyIdToken(idToken) {
   return info.email;
 }
 
+function normalizeEmail(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
 function normalizeDateValue(value) {
   if (value instanceof Date) {
     return value;
@@ -99,7 +106,7 @@ function doGet(e) {
       return jsonOutput({ ok: false, message: "Unsupported action" });
     }
 
-    const email = verifyIdToken(e.parameter.idToken);
+    const email = normalizeEmail(verifyIdToken(e.parameter.idToken));
     const sheet = getSheet();
     const values = sheet.getDataRange().getValues();
 
@@ -108,9 +115,9 @@ function doGet(e) {
 
     for (let i = 1; i < values.length; i++) {
       const row = values[i];
-      const rowEmail = String(row[2] || "").trim();
+      const rowEmail = normalizeEmail(row[2]);
 
-      if (!rowEmail || rowEmail.toLowerCase() !== email.toLowerCase()) {
+      if (!rowEmail || rowEmail !== email) {
         continue;
       }
 
@@ -120,7 +127,12 @@ function doGet(e) {
       }
 
       const actualValue = row[7];
-      if (!isPending(actualValue)) {
+      const actualDate = normalizeDateValue(actualValue);
+      const pending = isPending(actualValue);
+      const completedToday =
+        actualDate && toDateOnly(actualDate).getTime() === today.getTime();
+
+      if (!pending && !completedToday) {
         continue;
       }
 
@@ -137,7 +149,7 @@ function doGet(e) {
         task: row[5] || "",
         plannedRaw: plannedValue.getTime(),
         plannedStr: formatDate(plannedValue),
-        actualStr: ""
+        actualStr: pending || !actualDate ? "" : formatDate(actualDate)
       });
     }
 
@@ -156,7 +168,7 @@ function doPost(e) {
       return jsonOutput({ ok: false, message: "Unsupported action" });
     }
 
-    const email = verifyIdToken(payload.idToken);
+    const email = normalizeEmail(verifyIdToken(payload.idToken));
     const taskId = String(payload.taskId || "").trim();
     if (!taskId) {
       return jsonOutput({ ok: false, message: "Missing task ID" });
@@ -176,8 +188,8 @@ function doPost(e) {
         continue;
       }
 
-      const rowEmail = String(row[2] || "").trim();
-      if (!rowEmail || rowEmail.toLowerCase() !== email.toLowerCase()) {
+      const rowEmail = normalizeEmail(row[2]);
+      if (!rowEmail || rowEmail !== email) {
         throw new Error("Unauthorized to update this task");
       }
 

@@ -1,6 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
-import TaskCard from "./TaskCard.jsx";
-import { parsePlanned } from "../utils/date.js";
+import {
+  formatCountdown,
+  formatDisplayDate,
+  formatDisplayDateTime,
+  getCountdownTarget,
+  parsePlanned
+} from "../utils/date.js";
 
 const webAppUrl = import.meta.env.VITE_GAS_WEBAPP_URL;
 
@@ -8,6 +13,7 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(() => new Set());
+  const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
     let isMounted = true;
@@ -32,10 +38,15 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
         const normalized = (data.tasks || [])
           .map((task) => {
             const plannedDate = parsePlanned(task.plannedStr);
-            return { ...task, plannedDate };
+            const actualDate = parsePlanned(task.actualStr);
+            return {
+              ...task,
+              plannedDate,
+              actualDate,
+              isCompleted: actualDate instanceof Date
+            };
           })
-          .filter((task) => task.plannedDate instanceof Date)
-          .sort((a, b) => a.plannedDate - b.plannedDate);
+          .filter((task) => task.plannedDate instanceof Date);
 
         if (isMounted) {
           setTasks(normalized);
@@ -58,11 +69,43 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
     };
   }, [auth.idToken, onToast]);
 
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const displayName = useMemo(() => {
+    if (auth?.name) {
+      return auth.name;
+    }
+
+    const fromTasks = tasks.find((task) => task.name)?.name;
+    if (fromTasks) {
+      return fromTasks;
+    }
+
+    if (auth?.email) {
+      return auth.email.split("@")[0];
+    }
+
+    return "there";
+  }, [auth, tasks]);
+
+  const sortedTasks = useMemo(() => {
+    const pending = tasks
+      .filter((task) => !task.isCompleted)
+      .sort((a, b) => a.plannedDate - b.plannedDate);
+    const completed = tasks
+      .filter((task) => task.isCompleted)
+      .sort((a, b) => a.actualDate - b.actualDate);
+    return [...pending, ...completed];
+  }, [tasks]);
+
   const taskCountLabel = useMemo(() => {
     if (loading) {
       return "Loading";
     }
-    return `${tasks.length} Pending Tasks`;
+    return `${tasks.length} Tasks`;
   }, [loading, tasks.length]);
 
   async function handleMarkDone(taskId) {
@@ -89,7 +132,20 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
         throw new Error(data?.message || "Failed to mark task done");
       }
 
-      setTasks((prev) => prev.filter((task) => task.taskId !== taskId));
+      setTasks((prev) =>
+        prev.map((task) => {
+          if (task.taskId !== taskId) {
+            return task;
+          }
+          const actualDate = parsePlanned(data.actual);
+          return {
+            ...task,
+            actualStr: data.actual,
+            actualDate,
+            isCompleted: true
+          };
+        })
+      );
       onToast("Successfully Marked as Done");
     } catch (error) {
       onToast(error.message || "Unable to update task");
@@ -106,7 +162,8 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
     <main className="dashboard">
       <header className="header">
         <h1>NT Woods Checklist</h1>
-        <p>{auth.email}</p>
+        <p className="welcome-text">Welcome, {displayName}</p>
+        <p className="email-text">{auth.email}</p>
         <div className="header-actions">
           <button className="button button-secondary" onClick={onLogout}>
             Logout
@@ -120,19 +177,72 @@ export default function TaskDashboard({ auth, onLogout, onToast }) {
           <span>{taskCountLabel}</span>
         </div>
       ) : tasks.length === 0 ? (
-        <div className="empty-state">No Pending Tasks ??</div>
+        <div className="empty-state">No Pending Tasks</div>
       ) : (
-        <div className="task-grid">
-          {tasks.map((task) => (
-            <TaskCard
-              key={task.taskId}
-              task={task}
-              onMarkDone={handleMarkDone}
-              isUpdating={processing.has(task.taskId)}
-            />
-          ))}
+        <div className="table-wrap">
+          <table className="task-table">
+            <thead>
+              <tr>
+                <th>Task ID</th>
+                <th>Task Name</th>
+                <th>Planned Date</th>
+                <th>Deadline / Actual</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedTasks.map((task) => {
+                const deadlineDate = getCountdownTarget(task.plannedDate);
+                const deadlineText = task.isCompleted
+                  ? formatDisplayDateTime(task.actualDate)
+                  : formatDisplayDateTime(deadlineDate);
+                const countdown = deadlineDate
+                  ? formatCountdown(deadlineDate.getTime() - now)
+                  : { text: "", isOverdue: false };
+
+                return (
+                  <tr
+                    key={task.taskId}
+                    className={`task-row ${task.isCompleted ? "completed" : ""}`}
+                  >
+                    <td>{task.taskId}</td>
+                    <td className="task-name">{task.task}</td>
+                    <td>{formatDisplayDate(task.plannedDate)}</td>
+                    <td>
+                      <div>{deadlineText || "-"}</div>
+                      {!task.isCompleted && countdown.text ? (
+                        <div
+                          className={`countdown-text ${countdown.isOverdue ? "overdue" : ""}`}
+                        >
+                          {countdown.text}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td>
+                      {task.isCompleted ? (
+                        <span className="status-completed">Completed</span>
+                      ) : (
+                        <button
+                          className="button button-primary button-done"
+                          onClick={() => handleMarkDone(task.taskId)}
+                          disabled={processing.has(task.taskId)}
+                        >
+                          {processing.has(task.taskId) ? (
+                            <span className="spinner"></span>
+                          ) : (
+                            "Mark Done"
+                          )}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </main>
   );
 }
+
