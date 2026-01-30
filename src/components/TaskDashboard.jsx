@@ -8,7 +8,7 @@ import {
 } from "../utils/date.js";
 
 const webAppUrl = import.meta.env.VITE_GAS_WEBAPP_URL;
-const adminEmail = "deo01@ntwoods.com";
+const adminEmail = "pc01@ntwoods.com";
 
 const normalizeEmail = (value) =>
   String(value || "")
