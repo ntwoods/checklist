@@ -68,9 +68,9 @@ export function getCountdownTarget(plannedDate) {
       plannedDate.getFullYear(),
       plannedDate.getMonth(),
       plannedDate.getDate(),
-      18,
-      0,
-      0
+      23,
+      59,
+      59
     );
   }
 
